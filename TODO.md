@@ -1,0 +1,8 @@
+- [x] Create React app structure (done by create-react-app)
+- [x] Edit src/App.js to include login form
+- [x] Create src/Login.js component
+- [x] Test the app by running npm start
+- [x] Fix WebRTC connection issues in VoiceAgent.js
+  - [x] Change fetch URL from '/api/offer' to 'http://localhost:8000/api/offer'
+  - [x] Enable Xirsys ICE servers in server.py for better connectivity
+  - [x] Increase ICE gathering timeout to 5000ms
