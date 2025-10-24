@@ -46,6 +46,16 @@ from textblob import TextBlob
 from pinecone import Pinecone
 from sentence_transformers import SentenceTransformer
 
+# RAG dependencies (aligned with RAG_UI.py; splitter is now in langchain_text_splitters)
+from langchain_community.document_loaders import PyPDFLoader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_community.vectorstores import FAISS
+from langchain_groq import ChatGroq
+from langchain.chains import RetrievalQA
+from langchain.prompts import PromptTemplate
+import math
+
 load_dotenv(override=True)
 
 
@@ -70,22 +80,112 @@ Do not ask for personal details or complicate the conversation.
 Your goal is to clearly answer questions based on the knowledge base.
 """
 
-api_key = os.getenv("PINECONE_API_KEY")
-index_name = "travelport-smartpoint"
-pc = Pinecone(api_key=api_key)
-index = pc.Index(index_name)
+# RAG globals and helpers (integrated, no Streamlit)
+pdf_path = "travelport-smartpoint.pdf"  # ensure this file exists or adjust path
+vectorstore = None
+embedder = None
+rag_chain = None
 
-model = SentenceTransformer("intfloat/e5-base")
+def split_into_factual_points(answer_text: str):
+    """
+    Simple sentence splitting into factual points. Keeps punctuation.
+    """
+    sents = re.split(r'(?<=[\.?\!])\s+', answer_text.strip())
+    sents = [s.strip() for s in sents if s.strip()]
+    return sents
 
-def get_embedding(text: str):
-    return model.encode(text).tolist()
+def keyword_overlap(a: str, b: str):
+    wa = set(re.findall(r'\w+', a.lower()))
+    wb = set(re.findall(r'\w+', b.lower()))
+    if not wa:
+        return 0.0
+    return len(wa & wb) / len(wa)
+
+def semantic_sim_score(point: str, doc_text: str, embedder):
+    """
+    Cosine similarity using embedding model (embedding on the fly for small sets).
+    """
+    v_point = embedder.embed_query(point)
+    v_doc = embedder.embed_documents([doc_text])[0]
+    dot = sum(a * b for a, b in zip(v_point, v_doc))
+    norm_p = math.sqrt(sum(a * a for a in v_point))
+    norm_d = math.sqrt(sum(a * a for a in v_doc))
+    if norm_p == 0 or norm_d == 0:
+        return 0.0
+    return dot / (norm_p * norm_d)
+
+def citefix_correct_answer(raw_answer: str, candidate_docs, embedder, lam=0.8, top_k=1):
+    """
+    Apply Keyword + Semantic Context correction per factual point.
+    Returns corrected_text and pages used.
+    """
+    points = split_into_factual_points(raw_answer)
+    corrected_points = []
+    pages_used = []
+    for pt in points:
+        found = re.findall(r'page\s*(\d+)', pt, flags=re.IGNORECASE)
+        Ci = len(found) if found else 1
+
+        scores = []
+        for doc in candidate_docs or []:
+            kw = keyword_overlap(pt, doc.page_content)
+            sem = semantic_sim_score(pt, doc.page_content, embedder)
+            score = lam * kw + (1 - lam) * sem
+            scores.append((score, doc))
+
+        scores.sort(key=lambda x: x[0], reverse=True)
+        chosen = [d for s, d in scores[:Ci]]
+        if chosen:
+            primary = chosen[0]
+            page_meta = primary.metadata.get("page", 0)
+            page_one_based = page_meta + 1
+            pages_used.append(page_one_based)
+            corrected_pt = f"{pt} (Source: Page {page_one_based})"
+        else:
+            corrected_pt = pt
+        corrected_points.append(corrected_pt)
+
+    final = " ".join(corrected_points)
+    return final, sorted(set(pages_used))
+
+def build_rag_index():
+    global vectorstore, embedder, rag_chain
+    if vectorstore is not None and rag_chain is not None and embedder is not None:
+        return
+    loader = PyPDFLoader(pdf_path)
+    pages = loader.load()
+    for i, p in enumerate(pages):
+        p.metadata["page"] = p.metadata.get("page", i)
+    splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=150)
+    chunks = splitter.split_documents(pages)
+    embedder = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+    vectorstore = FAISS.from_documents(chunks, embedder)
+    retriever = vectorstore.as_retriever(search_kwargs={"k": 6})
+    llm = ChatGroq(model="llama-3.1-8b-instant")
+    prompt_template = """You are an assistant answering using only the provided context.
+Please append citation markers after factual statements in the form " (Page N)". If the fact is not in the context, say "The information is not available in the document."
+
+Context:
+{context}
+
+Question:
+{question}
+
+Answer:"""
+    PROMPT = PromptTemplate(template=prompt_template, input_variables=["context", "question"])
+    rag_chain = RetrievalQA.from_chain_type(
+        llm=llm,
+        chain_type="stuff",
+        retriever=retriever,
+        return_source_documents=True,
+        chain_type_kwargs={"prompt": PROMPT},
+    )
 
 async def rag_search_handler(params:FunctionCallParams):
     """
     Handler for RAG search function calls
     """
-    logger.info(f"[TOOL] rag_searc
-                h called with query: {params.arguments}")
+    logger.info(f"[TOOL] rag_search called with query: {params.arguments}")
     try:
         query = params.arguments.get("query","")
 
@@ -94,27 +194,17 @@ async def rag_search_handler(params:FunctionCallParams):
             await params.result_callback("I need a search query to help you")
             return
 
-        logger.info(f"🔎 [RAG_HANDLER] Processing query: '{query}'")
+        logger.info(f"🔎 [RAG_HANDLER] Processing query via backend: '{query}'")
 
-        query_vector = get_embedding(query)
-        loop = asyncio.get_event_loop()
-        results = await loop.run_in_executor(
-            None,
-            lambda: index.query(vector=query_vector, top_k=3, include_metadata=True)
-        )
-
-        matches = results.get("matches", [])
-        if matches:
-            best_match = matches[0]
-            score = best_match.get("score", 0)
-            text_answer = best_match.get("metadata", {}).get("text", "")
-
-            if score > 0.80 and text_answer:
-                await params.result_callback(text_answer)
-            else:
-                await params.result_callback("Let me check that for you.")
-        else:
-            await params.result_callback("I’m sorry, I don’t have that information right now. Please try again later.")
+        async with aiohttp.ClientSession() as session:
+            async with session.post("http://localhost:8000/rag/query", json={"query": query}) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    answer = data.get("answer") or "The information is not available in the document."
+                    await params.result_callback(answer)
+                else:
+                    logger.error(f"[RAG_HANDLER] Backend returned status {resp.status}")
+                    await params.result_callback("I'm having trouble finding that information. Please try again.")
     except Exception as e:
         logger.exception(f"[TOOL] Error in rag_search: {e}")
         await params.result_callback("I'm having trouble finding that information. Please try again.")
@@ -210,11 +300,11 @@ async def run_bot2(webrtc_connection):
         llm.register_function("pnr_search", pnr_search_handler)
 
 
-        logger.info("🔧 [BOT] RAG search function registered with LLM")
+        logger.info(" [BOT] RAG search function registered with LLM")
 
         rag_function = FunctionSchema(
             name="rag_search",
-            description= "Search the knowledge base for information about Indigo Voice services, account issues,faq questions and general company information",
+            description= "Search the knowledge base for information about ",
             properties={
                 "query":{
                     "type":"string",

@@ -1,4 +1,4 @@
-import argparse,os,re,logging,sqlite3,base64
+import argparse,os,re,logging,sqlite3,base64,io
 import asyncio
 import sys
 import pandas as pd
@@ -8,18 +8,144 @@ from datetime import datetime
 import uvicorn
 from agent_tools import run_bot2
 from dotenv import load_dotenv
-from fastapi import BackgroundTasks, FastAPI, Request,WebSocket
-from fastapi.responses import FileResponse,JSONResponse,Response
+from fastapi import BackgroundTasks, FastAPI, Request,WebSocket, UploadFile, File, HTTPException
+from fastapi.responses import FileResponse,JSONResponse,Response, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
+import fitz
+from PIL import Image
 from sentence_transformers import SentenceTransformer
 from pinecone import Pinecone
 
+# RAG dependencies (mirroring RAG_UI.py, no Streamlit)
+from langchain_community.document_loaders import PyPDFLoader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_community.vectorstores import FAISS
+from langchain_groq import ChatGroq
+from langchain.chains import RetrievalQA
+from langchain.prompts import PromptTemplate
 
 from pipecat.transports.network.webrtc_connection import IceServer, SmallWebRTCConnection
 
 # Load environment variables
 load_dotenv(override=True)
+
+# -------- RAG (FAISS/LangChain) globals & helpers (no Streamlit) --------
+# Stores last processed PDF, vector index and chain
+RAG_STATE = {
+    "pdf_path": None,
+    "vectorstore": None,
+    "embedder": None,
+    "rag_chain": None,
+    "num_pages": 0,
+    "num_chunks": 0,
+}
+
+# Last RAG result cache for UI/voice assistant to retrieve
+LAST_RAG_RESULT = {
+    "answer": None,
+    "pages": [],
+    "timestamp": None,
+}
+
+def split_into_factual_points(answer_text: str):
+    sents = re.split(r'(?<=[\.?\!])\s+', (answer_text or "").strip())
+    return [s.strip() for s in sents if s.strip()]
+
+def keyword_overlap(a: str, b: str):
+    wa = set(re.findall(r'\w+', (a or "").lower()))
+    wb = set(re.findall(r'\w+', (b or "").lower()))
+    if not wa:
+        return 0.0
+    return len(wa & wb) / len(wa)
+
+def semantic_sim_score(point: str, doc_text: str, embedder):
+    import math
+    v_point = embedder.embed_query(point)
+    v_doc = embedder.embed_documents([doc_text])[0]
+    dot = sum(a*b for a,b in zip(v_point, v_doc))
+    norm_p = math.sqrt(sum(a*a for a in v_point))
+    norm_d = math.sqrt(sum(a*a for a in v_doc))
+    if norm_p == 0 or norm_d == 0:
+        return 0.0
+    return dot / (norm_p * norm_d)
+
+def citefix_correct_answer(raw_answer: str, candidate_docs, embedder, lam=0.8):
+    points = split_into_factual_points(raw_answer)
+    corrected_points = []
+    pages_used = []
+    for pt in points:
+        found = re.findall(r'page\s*(\d+)', pt, flags=re.IGNORECASE)
+        Ci = len(found) if found else 1
+        scores = []
+        for doc in candidate_docs or []:
+            kw = keyword_overlap(pt, doc.page_content)
+            sem = semantic_sim_score(pt, doc.page_content, embedder)
+            score = lam * kw + (1 - lam) * sem
+            scores.append((score, doc))
+        scores.sort(key=lambda x: x[0], reverse=True)
+        chosen = [d for s,d in scores[:Ci]]
+        if chosen:
+            primary = chosen[0]
+            page_meta = primary.metadata.get("page", 0)
+            page_one_based = page_meta + 1
+            pages_used.append(page_one_based)
+            corrected_pt = f"{pt} (Source: Page {page_one_based})"
+        else:
+            corrected_pt = pt
+        corrected_points.append(corrected_pt)
+    final = " ".join(corrected_points)
+    return final, sorted(set(pages_used))
+
+def build_rag_index(pdf_path: str, chunk_size=1200, chunk_overlap=250):
+    loader = PyPDFLoader(pdf_path)
+    pages = loader.load()
+    for i, p in enumerate(pages):
+        p.metadata["page"] = p.metadata.get("page", i)
+    splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+    chunks = splitter.split_documents(pages)
+    embedder = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+    vectorstore = FAISS.from_documents(chunks, embedder)
+    # Use MMR retriever to improve diversity and relevance, fetch more then select top-k
+    retriever = vectorstore.as_retriever(search_type="mmr", search_kwargs={"k": 12, "fetch_k": 60, "lambda_mult": 0.5})
+    # Lower temperature for deterministic answers grounded in context, stronger model for better grounding
+    llm = ChatGroq(model="llama-3.1-8b-instant", temperature=0.0)
+    prompt_template = """You are a careful assistant. Answer using ONLY the provided context.
+Write a clear, complete answer that directly addresses the question.
+Prefer specifics over generic statements. Do not invent facts.
+
+Rules:
+- After any factual sentence derived from the context, append a citation in the form " (Page N)".
+- If the answer is not present in the context, reply: "The information is not available in the document."
+- If there are multiple relevant points, summarize them succinctly in 2-5 sentences.
+
+Context:
+{context}
+
+Question:
+{question}
+
+Answer:"""
+    PROMPT = PromptTemplate(template=prompt_template, input_variables=["context", "question"])
+    rag_chain = RetrievalQA.from_chain_type(
+        llm=llm,
+        chain_type="stuff",
+        retriever=retriever,
+        return_source_documents=True,
+        chain_type_kwargs={"prompt": PROMPT}
+    )
+    return vectorstore, embedder, rag_chain, len(pages), len(chunks)
+
+def render_page_image(pdf_path: str, page_number: int):
+    doc = fitz.open(pdf_path)
+    page = doc.load_page(page_number - 1)
+    pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))
+    img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    buf.seek(0)
+    return buf
 
 app = FastAPI()
 
@@ -135,6 +261,109 @@ async def login(request: Request):
 @app.get("/")
 async def serve_index():
     return FileResponse("index.html")
+
+@app.post("/pdf/upload")
+async def pdf_upload(file: UploadFile = File(...)):
+    try:
+        os.makedirs("temp_pdf_files", exist_ok=True)
+        pdf_path = os.path.join("temp_pdf_files", file.filename)
+        with open(pdf_path, "wb") as f:
+            f.write(await file.read())
+        RAG_STATE["pdf_path"] = pdf_path
+        logger.success(f"📄 [PDF] Uploaded and saved to {pdf_path}")
+        return {"pdf_path": pdf_path, "filename": file.filename}
+    except Exception:
+        logger.exception("[PDF] Upload failed")
+        raise HTTPException(status_code=500, detail="Upload failed")
+
+@app.post("/pdf/process")
+async def pdf_process(request: Request):
+    body = await request.json()
+    pdf_path = body.get("pdf_path") or RAG_STATE.get("pdf_path")
+    if not pdf_path or not os.path.exists(pdf_path):
+        raise HTTPException(status_code=400, detail="PDF path not set or file missing")
+    try:
+        vectorstore, embedder, rag_chain, num_pages, num_chunks = build_rag_index(pdf_path)
+        RAG_STATE.update({
+            "vectorstore": vectorstore,
+            "embedder": embedder,
+            "rag_chain": rag_chain,
+            "num_pages": num_pages,
+            "num_chunks": num_chunks,
+        })
+        logger.success(f"🧭 [RAG] Index built: pages={num_pages}, chunks={num_chunks}")
+        return {"pages": num_pages, "chunks": num_chunks}
+    except Exception:
+        logger.exception("[RAG] Failed to build index")
+        raise HTTPException(status_code=500, detail="Failed to process PDF")
+
+@app.post("/rag/query")
+async def rag_query(request: Request):
+    if not RAG_STATE.get("rag_chain") or not RAG_STATE.get("embedder"):
+        raise HTTPException(status_code=400, detail="RAG index not built. Upload and process a PDF first.")
+    body = await request.json()
+    query = body.get("query", "").strip()
+    if not query:
+        raise HTTPException(status_code=400, detail="Missing 'query'")
+    try:
+        rag_chain = RAG_STATE["rag_chain"]
+        response = rag_chain.invoke({"query": query})
+        raw_answer = response.get("result") or response.get("answer") or ""
+        candidate_docs = response.get("source_documents")
+        if not candidate_docs and RAG_STATE.get("vectorstore"):
+            try:
+                fallback = RAG_STATE["vectorstore"].as_retriever(search_kwargs={"k": 12})
+                candidate_docs = fallback.get_relevant_documents(query)
+            except Exception:
+                candidate_docs = []
+        corrected_answer, pages_used = citefix_correct_answer(raw_answer, candidate_docs, RAG_STATE["embedder"], lam=0.5)
+        # Relevance guard: if nothing cited and retrieved docs are weak vs query, report not available
+        try:
+            sims = []
+            for d in (candidate_docs or [])[:6]:
+                sims.append(semantic_sim_score(query, d.page_content or "", RAG_STATE["embedder"]))
+            max_sim = max(sims) if sims else 0.0
+            if (not pages_used) and max_sim < 0.35:
+                corrected_answer = "The information is not available in the document."
+        except Exception:
+            pass
+        # pack candidate snippets
+        candidates = []
+        for d in (candidate_docs or [])[:6]:
+            p = (d.metadata.get("page", 0) + 1)
+            candidates.append({"page": p, "snippet": (d.page_content or "")[:200]})
+        # save last result for UI/voice display
+        try:
+            from datetime import datetime as _dt
+            LAST_RAG_RESULT.update({
+                "answer": corrected_answer,
+                "pages": pages_used,
+                "timestamp": _dt.utcnow().isoformat() + "Z",
+            })
+        except Exception:
+            pass
+        return {"answer": corrected_answer, "pages": pages_used, "candidates": candidates}
+    except Exception:
+        logger.exception("[RAG] Query failed")
+        raise HTTPException(status_code=500, detail="Query failed")
+
+@app.get("/rag/last")
+async def rag_last():
+    return LAST_RAG_RESULT
+
+@app.get("/pdf/page/{page}")
+async def pdf_page(page: int):
+    pdf_path = RAG_STATE.get("pdf_path")
+    if not pdf_path or not os.path.exists(pdf_path):
+        raise HTTPException(status_code=400, detail="No PDF loaded")
+    if page < 1 or (RAG_STATE.get("num_pages") and page > RAG_STATE["num_pages"]):
+        raise HTTPException(status_code=400, detail="Page out of range")
+    try:
+        buf = render_page_image(pdf_path, page)
+        return StreamingResponse(buf, media_type="image/png")
+    except Exception:
+        logger.exception("[PDF] Render failed")
+        raise HTTPException(status_code=500, detail="Render failed")
 
 def get_embedding(text: str):
     logger.debug(f"🔢 [EMBEDDING] Generating embedding for text: '{text[:50]}{'...' if len(text) > 50 else ''}'")
