@@ -84,10 +84,12 @@ function DocumentQAStep({ onDone }) {
   return (
     <div style={{ minHeight: '100vh', width: '100%', background: 'linear-gradient(135deg, #0b1220 0%, #0a0a16 100%)', color: 'white' }}>
       <div style={{ maxWidth: 1200, margin: '0 auto', padding: '24px 20px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-          <h2 style={{ margin: 0, fontSize: 24, letterSpacing: 0.5 }}>NYC Docs • RAG Console</h2>
-          <div style={{ opacity: 0.8, fontSize: 12 }}>Powered by FAISS • LangChain • Groq</div>
-        </div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <div style={{ fontWeight: 800, fontSize: 20 }}>ITQ TravelPort Smartpoint Tutor</div>
+                </div>
+              <div style={{ opacity: 0.8, fontSize: 12 }}>Powered by FAISS • LangChain • Groq</div>
+            </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 0.9fr', gap: 20 }}>
           {/* Left column: Upload/Process/Query */}
           <div style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, padding: 18, boxShadow: '0 12px 40px rgba(0,0,0,0.35)' }}>
