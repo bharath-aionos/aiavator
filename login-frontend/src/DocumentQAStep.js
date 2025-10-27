@@ -61,57 +61,113 @@ function DocumentQAStep({ onDone, ragQuery, ragAnswer, ragPagesUsed, ragCandidat
   };
 
   return (
-    <div style={{ minHeight: '100vh', width: '100%', background: 'linear-gradient(135deg, #0b1220 0%, #0a0a16 100%)', color: 'white' }}>
-      <div style={{ maxWidth: 1200, margin: '0 auto', padding: '24px 20px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                  <div style={{ fontWeight: 800, fontSize: 20 }}>ITQ TravelPort Smartpoint Tutor</div>
-                </div>
-              <div style={{ opacity: 0.8, fontSize: 12 }}>Powered by FAISS • LangChain • Groq</div>
+    <div style={{ minHeight: '100vh', width: '100%', backgroundColor: '#f5f5f5', padding: '20px' }}>
+      <div style={{ maxWidth: 1200, margin: '0 auto' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ 
+                  fontSize: '24px', 
+                  fontWeight: '800', 
+                  color: '#3b82f6',
+                  fontFamily: 'Arial, sans-serif',
+                  letterSpacing: '-0.5px'
+                }}>itq</span>
+                <div style={{ fontSize: '24px', fontWeight: '700', color: '#111' }}>RAG Console</div>
+              </div>
+              <div style={{ color: '#666', fontSize: '14px' }}>FAISS • LangChain • Groq</div>
             </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 0.9fr', gap: 20 }}>
           {/* Left column: Upload/Process/Query */}
-          <div style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, padding: 18, boxShadow: '0 12px 40px rgba(0,0,0,0.35)' }}>
-            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 12 }}>Document Setup</div>
-            <div style={{ marginBottom: 12 }}>
-              <input type="file" accept="application/pdf" onChange={(e) => setPdfFile(e.target.files?.[0] || null)} />
-              <button onClick={uploadPdf} disabled={!pdfFile || loading} style={{ marginLeft: 8 }}>Upload</button>
-              {pdfInfo?.filename && <span style={{ color: '#9ae6b4', marginLeft: 8 }}>Uploaded: {pdfInfo.filename}</span>}
+          <div style={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 24, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
+            <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 20, color: '#111' }}>Document Setup</div>
+            <div style={{ marginBottom: 20, display: 'flex', gap: 10 }}>
+              <label htmlFor="file-upload" style={{
+                padding: '10px 14px',
+                border: '1px solid #e5e7eb',
+                borderRadius: 8,
+                cursor: 'pointer',
+                backgroundColor: '#fff',
+                flex: 1,
+                display: 'flex',
+                alignItems: 'center'
+              }}>
+                <input type="file" id="file-upload" accept="application/pdf" onChange={(e) => setPdfFile(e.target.files?.[0] || null)} style={{ display: 'none' }} />
+                <span style={{ color: '#666', fontSize: 14 }}>{pdfInfo?.filename || 'Choose file'}</span>
+              </label>
+              <button onClick={uploadPdf} disabled={!pdfFile || loading} style={{ 
+                background: 'linear-gradient(135deg, #3b82f6 0%, #06b6d4 100%)',
+                color: 'white',
+                padding: '8px 20px',
+                borderRadius: 8,
+                border: 'none',
+                cursor: 'pointer',
+                fontWeight: 500,
+                fontSize: 14
+              }}>Upload</button>
             </div>
-            <div style={{ marginBottom: 12 }}>
-              <button onClick={processPdf} disabled={!pdfInfo?.pdf_path || loading}>Process Document</button>
+            <div style={{ marginBottom: 20 }}>
+              <button onClick={processPdf} disabled={!pdfInfo?.pdf_path || loading} style={{
+                width: '100%',
+                background: 'linear-gradient(135deg, #3b82f6 0%, #06b6d4 100%)',
+                color: 'white',
+                padding: '10px',
+                borderRadius: 8,
+                border: 'none',
+                cursor: pdfInfo?.pdf_path && !loading ? 'pointer' : 'not-allowed',
+                fontWeight: 500,
+                fontSize: 14,
+                opacity: (!pdfInfo?.pdf_path || loading) ? 0.5 : 1
+              }}>Process Document</button>
               {processInfo && (
-                <span style={{ color: '#a0c4ff', marginLeft: 8 }}>Pages: {processInfo.pages} · Chunks: {processInfo.chunks}</span>
+                <span style={{ color: '#666', marginLeft: 8, fontSize: 14 }}>Pages: {processInfo.pages} · Chunks: {processInfo.chunks}</span>
               )}
             </div>
-            <div style={{ marginBottom: 12 }}>
+            <div style={{ marginBottom: 12, display: 'flex', gap: 10 }}>
               <input
                 type="text"
                 placeholder="Ask a question about the document"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                style={{ width: '70%' }}
+                style={{ 
+                  flex: 1,
+                  padding: '10px 14px',
+                  borderRadius: 8,
+                  border: '1px solid #e5e7eb',
+                  fontSize: 14,
+                  color: '#111',
+                  outline: 'none'
+                }}
               />
-              <button onClick={askRag} disabled={!processInfo || ragLoading} style={{ marginLeft: 8 }}>Ask</button>
+              <button onClick={askRag} disabled={!processInfo || ragLoading} style={{ 
+                background: 'linear-gradient(135deg, #3b82f6 0%, #06b6d4 100%)',
+                color: 'white',
+                padding: '10px 20px',
+                borderRadius: 8,
+                border: 'none',
+                cursor: (!processInfo || ragLoading) ? 'not-allowed' : 'pointer',
+                fontWeight: 500,
+                fontSize: 14,
+                opacity: (!processInfo || ragLoading) ? 0.5 : 1
+              }}>Ask</button>
             </div>
             {ragAnswer && (
-              <div style={{ marginTop: 8, padding: 12, background: 'rgba(255,255,255,0.06)', borderRadius: 8 }}>
-                <div style={{ fontWeight: 600, marginBottom: 6 }}>Answer</div>
-                <div>{ragAnswer}</div>
+              <div style={{ marginTop: 16, padding: 16, background: '#f9fafb', borderRadius: 8, border: '1px solid #e5e7eb' }}>
+                <div style={{ fontWeight: 600, marginBottom: 8, color: '#111' }}>Answer</div>
+                <div style={{ color: '#333', fontSize: 14 }}>{ragAnswer}</div>
               </div>
             )}
             {ragPagesUsed && ragPagesUsed.length > 0 && (
-              <div style={{ marginTop: 8 }}>
-                <div style={{ fontWeight: 600, marginBottom: 6 }}>Relevant Pages</div>
+              <div style={{ marginTop: 16 }}>
+                <div style={{ fontWeight: 600, marginBottom: 8, color: '#111' }}>Relevant Pages</div>
                 <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                   {ragPagesUsed.map((p) => (
                     <div key={p} style={{ width: 160 }}>
                       <img
                         src={`http://localhost:8000/pdf/page/${p}`}
                         alt={`Page ${p}`}
-                        style={{ width: '100%', borderRadius: 6, border: '1px solid rgba(255,255,255,0.1)' }}
+                        style={{ width: '100%', borderRadius: 8, border: '1px solid #e5e7eb' }}
                       />
-                      <div style={{ color: '#cbd5e1', fontSize: 12, marginTop: 4, textAlign: 'center' }}>Page {p}</div>
+                      <div style={{ color: '#666', fontSize: 12, marginTop: 4, textAlign: 'center' }}>Page {p}</div>
                     </div>
                   ))}
                 </div>
@@ -121,7 +177,18 @@ function DocumentQAStep({ onDone, ragQuery, ragAnswer, ragPagesUsed, ragCandidat
               <button
                 onClick={onDone}
                 disabled={!processInfo}
-                style={{ padding: '10px 16px', borderRadius: 8 }}
+                style={{ 
+                  width: '100%',
+                  padding: '10px 16px', 
+                  borderRadius: 8,
+                  background: 'linear-gradient(135deg, #3b82f6 0%, #06b6d4 100%)',
+                  color: 'white',
+                  border: 'none',
+                  cursor: processInfo ? 'pointer' : 'not-allowed',
+                  fontWeight: 500,
+                  fontSize: 14,
+                  opacity: processInfo ? 1 : 0.5
+                }}
               >
                 Continue to Assistant
               </button>
@@ -129,20 +196,22 @@ function DocumentQAStep({ onDone, ragQuery, ragAnswer, ragPagesUsed, ragCandidat
           </div>
 
           {/* Right column: Voice Assistant (enabled after processing) */}
-          <div style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, padding: 18, boxShadow: '0 12px 40px rgba(0,0,0,0.35)' }}>
-            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 12 }}>Voice Assistant</div>
+          <div style={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 24, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 16, color: '#111' }}>Voice Assistant</div>
             {!processInfo ? (
-              <div style={{ opacity: 0.8 }}>Process a PDF to enable the assistant.</div>
+              <div style={{ color: '#666', textAlign: 'center', padding: '40px 0' }}>Process a PDF to enable the assistant.</div>
             ) : (
-              <VoiceAgentConverted
-                ragQuery={ragQuery}
-                ragAnswer={ragAnswer}
-                ragPagesUsed={ragPagesUsed}
-                ragCandidates={ragCandidates}
-                ragLoading={ragLoading}
-                handleAsk={handleAsk}
-                updateRagFromServer={updateRagFromServer}
-              />
+              <div style={{ flex: 1 }}>
+                <VoiceAgentConverted
+                  ragQuery={ragQuery}
+                  ragAnswer={ragAnswer}
+                  ragPagesUsed={ragPagesUsed}
+                  ragCandidates={ragCandidates}
+                  ragLoading={ragLoading}
+                  handleAsk={handleAsk}
+                  updateRagFromServer={updateRagFromServer}
+                />
+              </div>
             )}
           </div>
         </div>

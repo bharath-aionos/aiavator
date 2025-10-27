@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import logo from './itq-logo.png';
 
 function Login({ onLogin }) {
   const [username, setUsername] = useState('');
@@ -30,39 +31,113 @@ function Login({ onLogin }) {
   };
 
   return (
-    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
-      {/* Global app title shown on landing */}
-      <div style={{ position: 'absolute', top: 24, left: 24, color: 'white', fontWeight: 700, fontSize: 18, opacity: 0.95 }}>
-        ITQ TravelPort Smartpoint Tutor
+    <div style={{ 
+      display: 'flex', 
+      justifyContent: 'center', 
+      alignItems: 'center', 
+      height: '100vh', 
+      background: '#f8fafc'
+    }}>
+      <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        maxWidth: '400px',
+        width: '100%',
+        padding: '40px',
+        background: 'white',
+        borderRadius: '16px',
+        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)'
+      }}>
+        <img src={logo} alt="ITQ Logo" style={{ width: '60px', marginBottom: '24px' }} />
+        <h2 style={{ 
+          fontSize: '24px', 
+          fontWeight: '600',
+          color: '#1e293b',
+          marginBottom: '8px'
+        }}>Login</h2>
+        <p style={{ 
+          color: '#64748b',
+          marginBottom: '24px',
+          fontSize: '14px'
+        }}>Default: admin / password</p>
+        
+        <form onSubmit={handleSubmit} style={{ width: '100%' }}>
+          <div style={{ marginBottom: '16px' }}>
+            <label 
+              htmlFor="username" 
+              style={{ 
+                display: 'block',
+                marginBottom: '8px',
+                color: '#475569',
+                fontSize: '14px'
+              }}
+            >
+              Username
+            </label>
+            <input
+              id="username"
+              type="text"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              required
+              style={{
+                width: '100%',
+                padding: '8px 12px',
+                borderRadius: '6px',
+                border: '1px solid #e2e8f0',
+                fontSize: '14px'
+              }}
+            />
+          </div>
+
+          <div style={{ marginBottom: '24px' }}>
+            <label
+              htmlFor="password"
+              style={{
+                display: 'block',
+                marginBottom: '8px',
+                color: '#475569',
+                fontSize: '14px'
+              }}
+            >
+              Password
+            </label>
+            <input
+              id="password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              style={{
+                width: '100%',
+                padding: '8px 12px',
+                borderRadius: '6px',
+                border: '1px solid #e2e8f0',
+                fontSize: '14px'
+              }}
+            />
+          </div>
+
+          <button
+            type="submit"
+            style={{
+              width: '100%',
+              padding: '12px',
+              background: '#3b82f6',
+              color: 'white',
+              border: 'none',
+              borderRadius: '6px',
+              fontSize: '14px',
+              fontWeight: '600',
+              cursor: 'pointer'
+            }}
+          >
+            Login
+          </button>
+        </form>
       </div>
-  <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', width: '300px', background: 'rgba(255, 255, 255, 0.15)', backdropFilter: 'blur(20px)', borderRadius: '30px', padding: '50px 40px', boxShadow: '0 25px 50px rgba(0, 0, 0, 0.25)', border: '1px solid rgba(255, 255, 255, 0.2)' }}>
-        <h2 style={{ color: 'white', fontSize: '32px', fontWeight: '700', marginBottom: '10px', textAlign: 'center', textShadow: '0 2px 4px rgba(0, 0, 0, 0.3)' }}>Login</h2>
-        <p style={{ color: 'white', textAlign: 'center', marginBottom: '20px' }}>Default Username: admin<br />Default Password: password</p>
-        <label style={{ color: 'white', marginBottom: '10px' }}>
-          Username:
-          <input
-            type="text"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            required
-            style={{ marginBottom: '10px', padding: '8px', width: '100%', borderRadius: '10px', border: 'none', background: 'rgba(255, 255, 255, 0.2)', color: 'white' }}
-          />
-        </label>
-        <label style={{ color: 'white', marginBottom: '10px' }}>
-          Password:
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            style={{ marginBottom: '10px', padding: '8px', width: '100%', borderRadius: '10px', border: 'none', background: 'rgba(255, 255, 255, 0.2)', color: 'white' }}
-          />
-        </label>
-        <button type="submit" style={{ padding: '10px', background: 'linear-gradient(135deg, #ff6b6b, #ee5a52)', color: 'white', border: 'none', cursor: 'pointer', borderRadius: '10px', fontWeight: '600' }}>
-          Login
-        </button>
-      </form>
-      {/* Bottom-right AIONOS logo (place a transparent PNG at /public/aionos-logo.png) */}
+      {/* Bottom-right AIONOS logo */}
       <div style={{ position: 'fixed', right: 18, bottom: 18, zIndex: 1000 }}>
         <img src="/aionos-logo.png" alt="By AIONOS" style={{ width: 140, height: 'auto', display: 'block', filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.3))' }} />
       </div>
