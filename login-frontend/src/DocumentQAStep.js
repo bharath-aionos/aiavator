@@ -1,14 +1,11 @@
 import React, { useState } from 'react';
 import VoiceAgentConverted from './VoiceAgentConverted';
 
-function DocumentQAStep({ onDone }) {
+function DocumentQAStep({ onDone, ragQuery, ragAnswer, ragPagesUsed, ragCandidates, ragLoading, handleAsk, updateRagFromServer }) {
   const [pdfFile, setPdfFile] = useState(null);
   const [pdfInfo, setPdfInfo] = useState(null); // { pdf_path, filename }
   const [processInfo, setProcessInfo] = useState(null); // { pages, chunks }
   const [query, setQuery] = useState('');
-  const [answer, setAnswer] = useState('');
-  const [pagesUsed, setPagesUsed] = useState([]);
-  const [candidates, setCandidates] = useState([]);
   const [loading, setLoading] = useState(false);
 
   const uploadPdf = async () => {
@@ -22,9 +19,6 @@ function DocumentQAStep({ onDone }) {
       const data = await res.json();
       setPdfInfo(data);
       setProcessInfo(null);
-      setAnswer('');
-      setPagesUsed([]);
-      setCandidates([]);
     } catch (e) {
       console.error(e);
       alert('Upload failed');
@@ -45,12 +39,13 @@ function DocumentQAStep({ onDone }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pdf_path: pdfInfo.pdf_path }),
       });
-      if (!res.ok) throw new Error('Process failed');
       const data = await res.json();
-      setProcessInfo(data);
-      setAnswer('');
-      setPagesUsed([]);
-      setCandidates([]);
+      if (res.ok && data) {
+        setProcessInfo(data);
+      } else {
+        throw new Error('Process failed');
+      }
+      // Shared RAG state is managed in App.js; no local setters to call here.
     } catch (e) {
       console.error(e);
       alert('Process failed');
@@ -59,26 +54,10 @@ function DocumentQAStep({ onDone }) {
     }
   };
 
-  const askRag = async () => {
+  // Use unified RAG handler from props
+  const askRag = () => {
     if (!query.trim()) return;
-    setLoading(true);
-    try {
-      const res = await fetch('http://localhost:8000/rag/query', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query }),
-      });
-      if (!res.ok) throw new Error('Query failed');
-      const data = await res.json();
-      setAnswer(data.answer || '');
-      setPagesUsed(Array.isArray(data.pages) ? data.pages : []);
-      setCandidates(Array.isArray(data.candidates) ? data.candidates : []);
-    } catch (e) {
-      console.error(e);
-      alert('Query failed');
-    } finally {
-      setLoading(false);
-    }
+    handleAsk(query);
   };
 
   return (
@@ -108,24 +87,24 @@ function DocumentQAStep({ onDone }) {
             <div style={{ marginBottom: 12 }}>
               <input
                 type="text"
-                placeholder="Optional: Ask a test question about the document"
+                placeholder="Ask a question about the document"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 style={{ width: '70%' }}
               />
-              <button onClick={askRag} disabled={!processInfo || loading} style={{ marginLeft: 8 }}>Ask</button>
+              <button onClick={askRag} disabled={!processInfo || ragLoading} style={{ marginLeft: 8 }}>Ask</button>
             </div>
-            {answer && (
+            {ragAnswer && (
               <div style={{ marginTop: 8, padding: 12, background: 'rgba(255,255,255,0.06)', borderRadius: 8 }}>
                 <div style={{ fontWeight: 600, marginBottom: 6 }}>Answer</div>
-                <div>{answer}</div>
+                <div>{ragAnswer}</div>
               </div>
             )}
-            {pagesUsed && pagesUsed.length > 0 && (
+            {ragPagesUsed && ragPagesUsed.length > 0 && (
               <div style={{ marginTop: 8 }}>
                 <div style={{ fontWeight: 600, marginBottom: 6 }}>Relevant Pages</div>
                 <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                  {pagesUsed.map((p) => (
+                  {ragPagesUsed.map((p) => (
                     <div key={p} style={{ width: 160 }}>
                       <img
                         src={`http://localhost:8000/pdf/page/${p}`}
@@ -155,7 +134,15 @@ function DocumentQAStep({ onDone }) {
             {!processInfo ? (
               <div style={{ opacity: 0.8 }}>Process a PDF to enable the assistant.</div>
             ) : (
-              <VoiceAgentConverted />
+              <VoiceAgentConverted
+                ragQuery={ragQuery}
+                ragAnswer={ragAnswer}
+                ragPagesUsed={ragPagesUsed}
+                ragCandidates={ragCandidates}
+                ragLoading={ragLoading}
+                handleAsk={handleAsk}
+                updateRagFromServer={updateRagFromServer}
+              />
             )}
           </div>
         </div>

@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 
-function VoiceAgentConverted() {
+function VoiceAgentConverted({ ragQuery, ragAnswer, ragPagesUsed, ragCandidates, ragLoading, handleAsk, updateRagFromServer }) {
   const [status, setStatus] = useState('disconnected');
   const [statusText, setStatusText] = useState('Ready to Connect');
   const [connected, setConnected] = useState(false);
   const [peerConnection, setPeerConnection] = useState(null);
-  const [lastPages, setLastPages] = useState([]);
   const [lastAnswer, setLastAnswer] = useState('');
+  const [lastPages, setLastPages] = useState([]);
 
   const waitForIceGatheringComplete = async (pc, timeoutMs = 2000) => {
     if (pc.iceGatheringState === 'complete') return;
@@ -125,6 +125,65 @@ function VoiceAgentConverted() {
     }
   };
 
+  // Poll backend for last RAG results when connected. Backend exposes /rag/last
+  useEffect(() => {
+    let interval = null;
+    let lastTs = null;
+    let isPolling = false;
+    let consecutiveEmptyResponses = 0;
+    const MAX_EMPTY_RESPONSES = 3;
+
+    const poll = async () => {
+      if (!connected || isPolling) return;
+      
+      try {
+        isPolling = true;
+        const res = await fetch('http://localhost:8000/rag/last');
+        if (!res.ok) return;
+        
+        const data = await res.json();
+        const ts = data.timestamp;
+        const hasAnswer = data.answer && data.answer.trim().length > 0;
+        
+        if (ts && ts !== lastTs && hasAnswer) {
+          lastTs = ts;
+          consecutiveEmptyResponses = 0;
+          if (updateRagFromServer) {
+            updateRagFromServer(data);
+          }
+        } else {
+          consecutiveEmptyResponses++;
+          if (consecutiveEmptyResponses >= MAX_EMPTY_RESPONSES) {
+            // Stop polling after several empty responses
+            if (interval) {
+              clearInterval(interval);
+              interval = null;
+            }
+          }
+        }
+      } catch (e) {
+        console.error('Polling error:', e);
+      } finally {
+        isPolling = false;
+      }
+    };
+
+    if (connected && !interval) {
+      // Initial poll with delay to avoid immediate hammering
+      setTimeout(poll, 1000);
+      // Poll less frequently and only when connected
+      interval = setInterval(poll, 5000);
+    }
+
+    return () => {
+      if (interval) {
+        clearInterval(interval);
+        interval = null;
+      }
+      isPolling = false;
+    };
+  }, [connected, updateRagFromServer]);
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', alignItems: 'center', justifyContent: 'center', fontFamily: "'Inter', sans-serif", background: 'linear-gradient(135deg, #0f1419 0%, #1a1a2e 100%)', margin: 0, padding: 0, position: 'relative' }}>
       <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(255, 255, 255, 0.1)', backdropFilter: 'blur(20px)', zIndex: -1 }}></div>
@@ -162,32 +221,10 @@ function VoiceAgentConverted() {
             <div style={{ width: '4px', height: '20px', background: 'rgba(255, 255, 255, 0.6)', margin: '0 2px', borderRadius: '2px', display: 'inline-block', animation: 'wave 1.2s ease-in-out infinite', animationDelay: '0.3s' }}></div>
             <div style={{ width: '4px', height: '20px', background: 'rgba(255, 255, 255, 0.6)', margin: '0 2px', borderRadius: '2px', display: 'inline-block', animation: 'wave 1.2s ease-in-out infinite', animationDelay: '0.4s' }}></div>
           </div>
-          {/* Live RAG result preview while assistant is speaking */}
-          {connected && (lastAnswer || (lastPages && lastPages.length > 0)) && (
-            <div style={{ marginTop: 24, textAlign: 'left' }}>
-              {lastAnswer && (
-                <div style={{ marginBottom: 10, padding: 12, background: 'rgba(255,255,255,0.06)', borderRadius: 8 }}>
-                  <div style={{ fontWeight: 600, marginBottom: 6, color: '#e2e8f0' }}>Answer</div>
-                  <div style={{ color: 'white' }}>{lastAnswer}</div>
-                </div>
-              )}
-              {lastPages && lastPages.length > 0 && (
-                <div>
-                  <div style={{ fontWeight: 600, marginBottom: 6, color: '#e2e8f0' }}>Relevant Pages</div>
-                  <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                    {lastPages.map((p) => (
-                      <div key={p} style={{ width: 120 }}>
-                        <img
-                          src={`http://localhost:8000/pdf/page/${p}`}
-                          alt={`Page ${p}`}
-                          style={{ width: '100%', borderRadius: 6, border: '1px solid rgba(255,255,255,0.12)' }}
-                        />
-                        <div style={{ color: '#cbd5e1', fontSize: 12, marginTop: 4, textAlign: 'center' }}>Page {p}</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+          {/* Voice status display */}
+          {connected && (
+            <div style={{ marginTop: 24, textAlign: 'center', color: 'rgba(255,255,255,0.8)' }}>
+              {ragLoading ? 'Listening and processing...' : 'Ready for voice input'}
             </div>
           )}
         </div>
