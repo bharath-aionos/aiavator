@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import Landing from './Landing';
 import Login from './Login';
 import VoiceAgentConverted from './VoiceAgentConverted';
 import DocumentQAStep from './DocumentQAStep';
@@ -6,7 +7,7 @@ import './App.css';
 
 function App() {
   const [loggedIn, setLoggedIn] = useState(false);
-  const [step, setStep] = useState('login'); // 'login' | 'doc' | 'assistant'
+  const [step, setStep] = useState('landing'); // 'landing' | 'login' | 'doc' | 'assistant'
 
   // Shared RAG state
   const [ragQuery, setRagQuery] = useState('');
@@ -83,6 +84,9 @@ function App() {
   };
 
   const renderStep = () => {
+    if (step === 'landing') {
+      return <Landing onGetStarted={() => setStep('login')} />;
+    }
     if (!loggedIn || step === 'login') {
       return <Login onLogin={handleLogin} />;
     }
