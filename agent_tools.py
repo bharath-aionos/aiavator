@@ -13,7 +13,8 @@ from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineParams, PipelineTask
 from pipecat.processors.aggregators.openai_llm_context import OpenAILLMContext
 from pipecat.transports.base_transport import TransportParams
-from pipecat.transports.network.small_webrtc import SmallWebRTCTransport
+#from pipecat.transports.network.small_webrtc import SmallWebRTCTransport
+from pipecat.transports.smallwebrtc.transport import SmallWebRTCTransport
 from pipecat.processors.frame_processor import FrameProcessor,FrameDirection
 from pipecat.observers.base_observer import BaseObserver,FramePushed
 from pipecat.frames.frames import (
@@ -46,6 +47,8 @@ from textblob import TextBlob
 from pinecone import Pinecone
 from sentence_transformers import SentenceTransformer
 
+from pipecat.services.heygen.video import HeyGenVideoService
+from pipecat.services.heygen.api import AvatarQuality, NewSessionRequest
 # RAG dependencies (aligned with RAG_UI.py; splitter is now in langchain_text_splitters)
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -61,7 +64,7 @@ load_dotenv(override=True)
 
 
 SYSTEM_INSTRUCTION = f"""
-You are ITQ Guru, a friendly and helpful voice assistant.Your name is Manisha.
+You are ITQ Guru, a friendly and helpful voice assistant.Your name is Hitesh.
 Your job is to answer user questions in a clear and concise way.
 
 You have access to a single tool:
@@ -282,6 +285,10 @@ async def run_bot2(webrtc_connection):
         params=TransportParams(
             audio_in_enabled=True,
             audio_out_enabled=True,
+            video_out_enabled=True,
+            video_out_is_live=True,
+            video_out_width=1280,
+            video_out_height=720,
             vad_analyzer=SileroVADAnalyzer(),
             audio_out_10ms_chunks=2,
         ),
@@ -291,9 +298,21 @@ async def run_bot2(webrtc_connection):
 
     async with aiohttp.ClientSession() as session:
         stt = GroqSTTService(api_key=os.getenv("GROQ_API_KEY"),model="whisper-large-v3-turbo")
-        tts = SarvamTTSService(api_key=os.getenv("SARVAM_API_KEY"),voice_id="manisha",model="bulbul:v2",aiohttp_session=session,params=SarvamTTSService.InputParams(language=Language.EN))
+        tts = SarvamTTSService(api_key=os.getenv("SARVAM_API_KEY"),voice_id="hitesh",model="bulbul:v2",aiohttp_session=session,params=SarvamTTSService.InputParams(language=Language.EN))
         llm = GroqLLMService(api_key=os.getenv("GROQ_API_KEY"),model="meta-llama/llama-4-maverick-17b-128e-instruct")
         logger.debug("🤖 [BOT] LLM service initialized")
+
+        heyGen = HeyGenVideoService(
+            api_key=os.getenv("HEYGEN_API_KEY"),
+            session=session,
+            session_request=NewSessionRequest(
+                # You can change the avatar_id to your desired Heygen avatar
+                avatar_id="Shawn_Therapist_public",
+                # avatar_id="466e16b3ff07435a8317e2758bc7f902",
+                version="v2",
+                quality=AvatarQuality.high
+            ),
+        )
 
         llm.register_function("rag_search",rag_search_handler)
         llm.register_function("flight_search", flight_search_handler)
@@ -372,6 +391,7 @@ async def run_bot2(webrtc_connection):
                 context_aggregator.user(),
                 llm,  # LLM
                 tts,
+                heyGen,
                 pipecat_transport.output(),
                 context_aggregator.assistant(),
                 #latency_tracker

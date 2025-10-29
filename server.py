@@ -26,7 +26,8 @@ from langchain_groq import ChatGroq
 from langchain.chains import RetrievalQA
 from langchain.prompts import PromptTemplate
 
-from pipecat.transports.network.webrtc_connection import IceServer, SmallWebRTCConnection
+#from pipecat.transports.network.webrtc_connection import IceServer, SmallWebRTCConnection
+from pipecat.transports.smallwebrtc.connection import IceServer,SmallWebRTCConnection
 
 # Load environment variables
 load_dotenv(override=True)
