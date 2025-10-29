@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 function VoiceAgentConverted({ ragQuery, ragAnswer, ragPagesUsed, ragCandidates, ragLoading, handleAsk, updateRagFromServer }) {
   const [status, setStatus] = useState('disconnected');
@@ -7,6 +7,9 @@ function VoiceAgentConverted({ ragQuery, ragAnswer, ragPagesUsed, ragCandidates,
   const [peerConnection, setPeerConnection] = useState(null);
   const [lastAnswer, setLastAnswer] = useState('');
   const [lastPages, setLastPages] = useState([]);
+
+  const videoEl = useRef(null);
+  const audioEl = useRef(null);
 
   const waitForIceGatheringComplete = async (pc, timeoutMs = 2000) => {
     if (pc.iceGatheringState === 'complete') return;
@@ -43,9 +46,19 @@ function VoiceAgentConverted({ ragQuery, ragAnswer, ragPagesUsed, ragCandidates,
     ];
     const pc = new RTCPeerConnection({ iceServers });
     addPeerConnectionEventListeners(pc);
+
     pc.ontrack = e => {
-      const audioEl = document.getElementById("audio-el");
-      if (audioEl) audioEl.srcObject = e.streams[0];
+      console.log(`Received track of kind: ${e.track.kind}`);
+      if (e.track.kind === 'video' && videoEl.current) {
+        // If it's video, attach it to the <video> element
+        videoEl.current.srcObject = e.streams[0];
+        videoEl.current.play().catch(err => console.error("Video play failed:", err));
+      }
+      if (e.track.kind === 'audio' && audioEl.current) {
+        // If it's audio, attach it to the <audio> element
+        audioEl.current.srcObject = e.streams[0];
+        audioEl.current.play().catch(err => console.error("Audio play failed:", err));
+      }
     };
     pc.addTransceiver(audioTrack, { direction: 'sendrecv' });
     pc.addTransceiver('video', { direction: 'sendrecv' });
@@ -89,7 +102,7 @@ function VoiceAgentConverted({ ragQuery, ragAnswer, ragPagesUsed, ragCandidates,
         setStatus('connected');
         setStatusText('Connected & Listening');
         setConnected(true);
-      } else if (connectionState === 'disconnected') {
+      } else if (['disconnected', 'failed', 'closed'].includes(connectionState)){
         setStatus('disconnected');
         setStatusText('Ready to Connect');
         setConnected(false);
@@ -197,6 +210,31 @@ function VoiceAgentConverted({ ragQuery, ragAnswer, ragPagesUsed, ragCandidates,
         width: '100%',
         padding: '20px'
       }}>
+        {/* --- KEY CHANGE: ADDED VIDEO ELEMENT --- */}
+        {/* This div is the "screen" for your HeyGen avatar */}
+        <div style={{
+          width: '220px',
+          height: '220px',
+          borderRadius: '50%', // Make it a circle
+          overflow: 'hidden',
+          backgroundColor: '#222',
+          marginBottom: '16px',
+          border: `4px solid ${status === 'connected' ? '#10b981' : (status === 'connecting' ? '#3b82f6' : '#666')}`
+        }}>
+          <video
+            ref={videoEl}
+            autoPlay
+            playsInline 
+            muted// Mute the video element; audio will come from the <audio> tag
+            style={{
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover' // Fills the circle
+            }}
+          />
+        </div>
+        {/* --- END OF VIDEO ELEMENT --- */}
+        
         <h2 style={{ fontSize: '18px', fontWeight: '600', marginBottom: '16px', color: '#111' }}>Voice Assistant</h2>
         <p style={{ color: '#666', marginBottom: '24px', textAlign: 'center' }}>
           Process a PDF to enable the assistant.
@@ -240,7 +278,7 @@ function VoiceAgentConverted({ ragQuery, ragAnswer, ragPagesUsed, ragCandidates,
         </button>
       </div>
 
-      <audio id="audio-el" autoPlay></audio>
+      <audio id="audio-el" ref={audioEl} autoPlay></audio>
     </div>
   );
 }
